@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Архитектор Нексуса: 3D Симулятор</title>
+    <!-- Chosen Palette: Deep Slate Harmony (темно-серый фон, золотые и акцентные элементы) -->
+    <!-- Application Structure Plan: Одностраничная 3D игра. Структура: 1. Холст для 3D-сцены (three.js) занимает большую часть экрана. 2. Панель UI (HTML/Tailwind) поверх холста для отображения статистики игры (ресурсы, узлы, цель) и лога действий. 3. Вводные и игровые сообщения (HTML/JS) для инструкций, победы/поражения. 4. Элементы управления игрой (клавиши WASD для движения) и камерой (мышь для вращения и зума). Эта структура обеспечивает полное погружение в 3D-мир, при этом предоставляя всю необходимую информацию для игрового процесса и четкую обратную связь. -->
+    <!-- Visualization & Content Choices: 1. 3D-мир: three.js для рендеринга интерактивной сцены с улучшенными визуальными элементами. Игрок представлен капсулой. Ресурсы - светящиеся кубы. Узлы сети - ярко-зеленые октаэдры. Линии связи между узлами. Добавлены фоновые звезды для глубины. Цель - создать ощущение интерактивного, динамично развивающегося мира. 2. UI: HTML/Tailwind для оверлея статистики и лога действий. Динамическое обновление чисел и сообщений. Цель - предоставить четкую, мгновенную обратную связь о прогрессе и событиях. 3. Камера: Three.js OrbitControls для интерактивного вращения и зума, а также следования за игроком для интуитивного перемещения. Цель - улучшить исследование 3D-пространства. 4. Игровой процесс: JavaScript для логики движения игрока, обнаружения столкновений, генерации ресурсов и узлов, а также проверки условий победы/поражения. Цель - создать понятный и вовлекающий цикл "собери-построй" с интерактивными элементами. 5. Отсутствие SVG/Mermaid: Все визуальные элементы реализованы средствами three.js или HTML/CSS. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a202c; /* tailwind dark gray-900 */
+            overflow: hidden;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        canvas {
+            display: block;
+            position: fixed; /* Чтобы холст всегда заполнял весь экран */
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 0;
+        }
+        #game-ui {
+            position: fixed; /* Для наложения поверх холста */
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10; /* Выше холста */
+            background-color: rgba(30, 41, 59, 0.9); /* slate-800 с прозрачностью */
+            border-radius: 0.75rem; /* rounded-xl */
+            padding: 1.5rem; /* p-6 */
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* shadow-xl */
+            color: #E2E8F0; /* gray-200 */
+            width: 95%;
+            max-width: 800px;
+            margin: auto;
+            border: 1px solid #4A5568; /* gray-700 */
+        }
+        .accent-gold {
+            color: #D4AF37;
+        }
+        .bg-accent-gold {
+            background-color: #D4AF37;
+        }
+        .text-shadow {
+            text-shadow: 1px 1px 3px rgba(0,0,0,0.4);
+        }
+        .info-box {
+            background-color: rgba(0, 0, 0, 0.85); /* Более темный оверлей для сообщений */
+            border-radius: 0.5rem;
+            padding: 2rem;
+            color: #CBD5E0; /* gray-300 */
+            position: fixed; /* На весь экран */
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 20; /* Выше UI */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+        #game-log {
+            background-color: rgba(17, 24, 39, 0.7); /* gray-900 с прозрачностью */
+            border: 1px solid #4A5568;
+            max-height: 120px; /* Ограничиваем высоту лога */
+            overflow-y: auto; /* Добавляем прокрутку, если сообщений много */
+        }
+        #game-log li {
+            padding: 0.25rem 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-ui" class="flex flex-col md:flex-row justify-between items-start md:items-center p-6 rounded-xl shadow-xl space-y-4 md:space-y-0 md:space-x-8">
+        <div class="flex-1 text-center md:text-left">
+            <h1 class="text-3xl font-extrabold accent-gold text-shadow mb-2">Архитектор Нексуса</h1>
+            <p class="text-lg text-gray-300">Постройте Децентрализованную Сеть</p>
+        </div>
+        <div class="flex-1 grid grid-cols-2 gap-4 text-center">
+            <div>
+                <p class="text-gray-400 text-sm">Ресурсы ⚡</p>
+                <p id="resource-count" class="text-3xl font-bold accent-gold text-shadow">0</p>
+            </div>
+            <div>
+                <p class="text-gray-400 text-sm">Узлы Сети 🌐</p>
+                <p id="node-count" class="text-3xl font-bold text-white text-shadow">0 / 20</p>
+            </div>
+        </div>
+        <div class="flex-1 text-center md:text-right mt-4 md:mt-0">
+            <button id="restart-button" class="px-6 py-3 bg-accent-gold text-gray-900 font-bold rounded-full shadow-lg hover:bg-yellow-600 transition-colors transform hover:scale-105">
+                Начать заново
+            </button>
+        </div>
+        
+        <div id="game-log-container" class="mt-4 w-full text-center">
+            <h3 class="text-lg font-semibold text-gray-200 mb-2">Лог Действий:</h3>
+            <ul id="game-log" class="bg-gray-900/70 p-4 rounded-lg shadow-inner text-sm text-gray-400">
+                <li>Добро пожаловать в Nexus Prime!</li>
+            </ul>
+        </div>
+
+        <div id="game-message" class="info-box hidden">
+            <p id="message-text" class="text-white text-2xl md:text-3xl font-bold mb-4"></p>
+            <p id="instruction-text" class="text-gray-300 text-md md:text-lg mb-6">
+                Цель: Соберите 20 узлов. Используйте WASD для движения, мышь для вращения камеры.
+            </p>
+            <button id="start-game-button" class="px-8 py-4 bg-accent-gold text-gray-900 font-bold rounded-full shadow-lg hover:bg-yellow-600 transition-colors transform hover:scale-105">
+                Начать игру
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Глобальные переменные Three.js
+        let scene, camera, renderer, controls;
+        let player;
+        const resources = [];
+        const networkNodes = [];
+        const networkLines = [];
+
+        // Состояние игры
+        let gameActive = false;
+        let collectedResources = 0;
+        const targetNodes = 20; // Количество узлов для победы
+        const resourcesPerNode = 3; // Сколько ресурсов нужно для постройки одного узла
+
+        // Элементы UI
+        const resourceCountEl = document.getElementById('resource-count');
+        const nodeCountEl = document.getElementById('node-count');
+        const gameMessageEl = document.getElementById('game-message');
+        const messageTextEl = document.getElementById('message-text');
+        const instructionTextEl = document.getElementById('instruction-text');
+        const startGameButton = document.getElementById('start-game-button');
+        const restartButton = document.getElementById('restart-button');
+        const gameLogEl = document.getElementById('game-log'); // Добавлено: лог действий
+
+        // Движение игрока
+        const keys = { w: false, a: false, s: false, d: false };
+        const playerSpeed = 0.5;
+
+        // --- Инициализация сцены ---
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a202c); // Темный фон
+
+            // Камера
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 20, 40); // Начальная позиция камеры, чтобы видеть поле
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.body.appendChild(renderer.domElement);
+
+            // OrbitControls для камеры
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true; // Для более плавного движения камеры
+            controls.dampingFactor = 0.05;
+            controls.screenSpacePanning = false;
+            controls.maxPolarAngle = Math.PI * 0.45; // Запрещаем камере уходить под землю
+            controls.target.set(0, 1.5, 0); // Фокус камеры на игроке (изначально)
+
+            // Игрок (Ядро) - теперь капсула
+            const playerGeometry = new THREE.CapsuleGeometry(1, 2, 8, 16); // Радиус, высота, сегменты
+            const playerMaterial = new THREE.MeshLambertMaterial({ color: 0xD4AF37 }); // Золотой цвет
+            player = new THREE.Mesh(playerGeometry, playerMaterial);
+            player.position.set(0, 1.5, 0); // Немного над землей
+            scene.add(player);
+
+            // Плоскость земли
+            const planeGeometry = new THREE.PlaneGeometry(100, 100);
+            const planeMaterial = new THREE.MeshLambertMaterial({ color: 0x2d3748, side: THREE.DoubleSide });
+            const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+            plane.rotation.x = Math.PI / 2;
+            plane.position.y = 0;
+            scene.add(plane);
+
+            // Вспомогательная сетка на плоскости
+            const gridHelper = new THREE.GridHelper(100, 100, 0x444444, 0x444444);
+            scene.add(gridHelper);
+
+            // Освещение
+            const ambientLight = new THREE.AmbientLight(0x404040, 2); // Мягкий белый свет, увеличена интенсивность
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2); // Направленный свет
+            directionalLight.position.set(10, 20, 10);
+            scene.add(directionalLight);
+
+            // Фоновые звезды
+            const starGeometry = new THREE.BufferGeometry();
+            const starMaterial = new THREE.PointsMaterial({ color: 0xFFFFFF, size: 0.1 });
+            const starVertices = [];
+            for (let i = 0; i < 5000; i++) {
+                const x = (Math.random() - 0.5) * 1000;
+                const y = (Math.random() - 0.5) * 1000;
+                const z = (Math.random() - 0.5) * 1000;
+                starVertices.push(x, y, z);
+            }
+            starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+            const stars = new THREE.Points(starGeometry, starMaterial);
+            scene.add(stars);
+
+            spawnResources(15); // Начальные ресурсы
+
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+
+            resetGame(); // Сброс состояния игры и UI
+            showGameMessage('Добро пожаловать, Архитектор Нексуса!', 'Используйте WASD для движения, мышь для вращения камеры. Цель: постройте 20 Узлов Сети.');
+        }
+
+        // --- Игровой цикл ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (gameActive) {
+                // Движение игрока
+                const moveAmount = playerSpeed;
+                const rotation = camera.getWorldDirection(new THREE.Vector3()); // Направление камеры
+                rotation.y = 0; // Игнорируем вертикальную составляющую, чтобы не летать
+                rotation.normalize();
+
+                if (keys.w) player.position.addScaledVector(rotation, -moveAmount); // Двигаемся вперед по направлению камеры
+                if (keys.s) player.position.addScaledVector(rotation, moveAmount); // Двигаемся назад
+                
+                const sidewaysRotation = new THREE.Vector3().crossVectors(camera.up, rotation).normalize();
+                if (keys.a) player.position.addScaledVector(sidewaysRotation, -moveAmount); // Двигаемся влево
+                if (keys.d) player.position.addScaledVector(sidewaysRotation, moveAmount); // Двигаемся вправо
+
+                // Ограничиваем игрока пределами карты
+                const mapLimit = 49;
+                player.position.x = Math.max(-mapLimit, Math.min(mapLimit, player.position.x));
+                player.position.z = Math.max(-mapLimit, Math.min(mapLimit, player.position.z));
+                
+                checkCollisions();
+            }
+
+            controls.target.copy(player.position); // Камера всегда следует за игроком
+            controls.update(); // Обновление контроллера камеры
+            renderer.render(scene, camera);
+        }
+
+        // --- Логика игры ---
+        function spawnResources(count) {
+            for (let i = 0; i < count; i++) {
+                const geometry = new THREE.BoxGeometry(1, 1, 1);
+                // Светящийся материал для ресурсов
+                const material = new THREE.MeshStandardMaterial({
+                    color: 0x00FFFF, // Яркий голубой
+                    emissive: 0x00FFFF, // Цвет свечения
+                    emissiveIntensity: 0.5 // Интенсивность свечения
+                });
+                const resource = new THREE.Mesh(geometry, material);
+                resource.position.set(
+                    (Math.random() - 0.5) * 90, // Шире область спавна
+                    0.5,
+                    (Math.random() - 0.5) * 90
+                );
+                scene.add(resource);
+                resources.push(resource);
+            }
+        }
+
+        function checkCollisions() {
+            const playerBox = new THREE.Box3().setFromObject(player);
+
+            for (let i = resources.length - 1; i >= 0; i--) {
+                const resource = resources[i];
+                const resourceBox = new THREE.Box3().setFromObject(resource);
+
+                if (playerBox.intersectsBox(resourceBox)) {
+                    scene.remove(resource);
+                    resources.splice(i, 1);
+                    collectedResources++;
+                    updateUIStats();
+                    addLog(`⚡ Собран Информационный Осколок! (${collectedResources})`);
+
+                    if (collectedResources % resourcesPerNode === 0) {
+                        buildNetworkNode();
+                    }
+                    spawnResources(1); // Порождаем новый ресурс после сбора
+                }
+            }
+        }
+
+        function buildNetworkNode() {
+            if (networkNodes.length >= targetNodes) return; // Не строим больше цели
+
+            const nodeGeometry = new THREE.OctahedronGeometry(1.2); // Октаэдр для узла
+            const nodeMaterial = new THREE.MeshLambertMaterial({ color: 0x00FF00 }); // Ярко-зеленый
+            const newNode = new THREE.Mesh(nodeGeometry, nodeMaterial);
+
+            // Позиционируем новый узел рядом с игроком, но с небольшим смещением
+            const offset = new THREE.Vector3(
+                (Math.random() - 0.5) * 20, // Больше радиус смещения
+                1.5,
+                (Math.random() - 0.5) * 20
+            );
+            newNode.position.copy(player.position).add(offset);
+            newNode.position.y = 1.5; // Узлы чуть выше земли
+            scene.add(newNode);
+            networkNodes.push(newNode);
+            addLog(`🌐 Построен Узел Сети! (${networkNodes.length}/${targetNodes})`);
+            updateUIStats();
+
+            // Соединяем с ближайшим существующим узлом, если есть
+            if (networkNodes.length > 1) {
+                let closestNode = null;
+                let minDist = Infinity;
+                for (const node of networkNodes) {
+                    if (node !== newNode) {
+                        const dist = newNode.position.distanceTo(node.position);
+                        if (dist < minDist) {
+                            minDist = dist;
+                            closestNode = node;
+                        }
+                    }
+                }
+                if (closestNode && minDist < 40) { // Увеличена дистанция для соединения
+                    const lineMaterial = new THREE.LineBasicMaterial({ color: 0x8888FF, linewidth: 3 }); // Более толстая синяя линия
+                    const points = [];
+                    points.push(newNode.position.clone());
+                    points.push(closestNode.position.clone());
+                    const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+                    const line = new THREE.Line(lineGeometry, lineMaterial);
+                    scene.add(line);
+                    networkLines.push(line);
+                }
+            }
+
+            checkWinCondition();
+        }
+
+        function checkWinCondition() {
+            if (networkNodes.length >= targetNodes) {
+                showGameMessage('ПОБЕДА, АРХИТЕКТОР!', 'Вы успешно построили Децентрализованную Сеть! Будущее в ваших руках.');
+                gameActive = false;
+            }
+        }
+
+        // --- Обновление UI ---
+        function updateUIStats() {
+            resourceCountEl.textContent = collectedResources;
+            nodeCountEl.textContent = `${networkNodes.length} / ${targetNodes}`;
+        }
+
+        function addLog(message) {
+            const logItem = document.createElement('li');
+            logItem.textContent = message;
+            gameLogEl.prepend(logItem); // Добавляем в начало списка
+            if (gameLogEl.children.length > 5) { // Ограничиваем количество сообщений
+                gameLogEl.removeChild(gameLogEl.lastChild);
+            }
+        }
+
+        // --- Сообщения игры (начало/конец) ---
+        function showGameMessage(title, instructions) {
+            messageTextEl.textContent = title;
+            instructionTextEl.textContent = instructions;
+            gameMessageEl.classList.remove('hidden');
+            startGameButton.classList.remove('hidden');
+            restartButton.classList.add('hidden'); // Скрываем кнопку рестарта в начальном сообщении
+        }
+
+        function hideGameMessage() {
+            gameMessageEl.classList.add('hidden');
+            startGameButton.classList.add('hidden');
+            restartButton.classList.remove('hidden'); // Показываем кнопку рестарта после начала игры
+        }
+
+        // --- Сброс игры ---
+        function resetGame() {
+            gameActive = false;
+            collectedResources = 0;
+            updateUIStats();
+
+            // Очищаем существующие элементы со сцены
+            resources.forEach(res => scene.remove(res));
+            resources.length = 0;
+            networkNodes.forEach(node => scene.remove(node));
+            networkNodes.length = 0;
+            networkLines.forEach(line => scene.remove(line));
+            networkLines.length = 0;
+
+            player.position.set(0, 1.5, 0); // Сбрасываем позицию игрока
+            controls.target.set(0, 1.5, 0); // Сбрасываем фокус камеры
+            camera.position.set(0, 20, 40); // Сбрасываем позицию камеры
+
+            spawnResources(15); // Заново порождаем ресурсы
+            updateUIStats(); // Обновляем UI
+        }
+
+        // --- Обработчики событий ---
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onKeyDown(event) {
+            keys[event.key.toLowerCase()] = true;
+        }
+
+        function onKeyUp(event) {
+            keys[event.key.toLowerCase()] = false;
+        }
+
+        startGameButton.addEventListener('click', () => {
+            hideGameMessage();
+            gameActive = true;
+            controls.target.copy(player.position); // Убеждаемся, что камера следует за игроком
+        });
+
+        restartButton.addEventListener('click', () => {
+            resetGame();
+            showGameMessage('Добро пожаловать, Архитектор Нексуса!', 'Используйте WASD для движения, мышь для вращения камеры. Цель: постройте 20 Узлов Сети.');
+        });
+
+        // Запуск игры при загрузке окна
+        window.onload = function () {
+            init();
+            animate();
+        };
+    </script>
+</body>
+</html>
